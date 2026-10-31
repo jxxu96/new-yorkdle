@@ -1,0 +1,11 @@
+{
+  "name": "new-yorkdle",
+  "version": "1.0.0",
+  "description": "A daily Wordle-style guessing game about places in Manhattan, played on a blank map.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run.mjs"
+  },
+  "license": "MIT"
+}
