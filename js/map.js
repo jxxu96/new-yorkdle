@@ -1,9 +1,10 @@
 // Blank Manhattan SVG map with pan, wheel/pinch/button zoom and tap-to-pin.
-import { project, unproject } from './geo.js';
+import { project, unproject, nearestPointOnPath } from './geo.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const PAD_M = 700;
 const MIN_VIEW_W = 350; // max zoom: ~350 m across
+const MIN_FIT_SPAN_M = 1200; // end-of-round framing is never tighter than ~1.2 km
 const TAP_SLOP_PX = 7;
 
 function el(name, attrs = {}, parent) {
@@ -22,6 +23,7 @@ export class ManhattanMap {
     this.onKeyboardDrop = onKeyboardDrop || this.onTap;
     this.pointers = new Map();
     this.pins = [];
+    this.shorePath = [...polygon, polygon[0]]; // closed ring, for nearest-shore lookups
 
     const pts = polygon.map(([lat, lng]) => project(lat, lng));
     const xs = pts.map((p) => p.x);
@@ -162,14 +164,25 @@ export class ManhattanMap {
   fitPoints(latlngs, { minWidth = 1600 } = {}) {
     if (!latlngs.length) return;
     const ps = latlngs.map(([lat, lng]) => project(lat, lng));
-    const minX = Math.min(...ps.map((p) => p.x));
-    const maxX = Math.max(...ps.map((p) => p.x));
-    const minY = Math.min(...ps.map((p) => p.y));
-    const maxY = Math.max(...ps.map((p) => p.y));
+    let minX = Math.min(...ps.map((p) => p.x));
+    let maxX = Math.max(...ps.map((p) => p.x));
+    let minY = Math.min(...ps.map((p) => p.y));
+    let maxY = Math.max(...ps.map((p) => p.y));
+    // A tight cluster (first-try win, all guesses close) would frame nothing but blank
+    // island, so pull in the nearest shoreline to give the reveal some context.
+    if (maxX - minX < MIN_FIT_SPAN_M && maxY - minY < MIN_FIT_SPAN_M) {
+      const c = unproject((minX + maxX) / 2, (minY + maxY) / 2);
+      const near = nearestPointOnPath(c.lat, c.lng, this.shorePath);
+      const s = project(near.lat, near.lng);
+      minX = Math.min(minX, s.x);
+      maxX = Math.max(maxX, s.x);
+      minY = Math.min(minY, s.y);
+      maxY = Math.max(maxY, s.y);
+    }
     const a = this.aspect;
     let w = Math.max(minWidth, (maxX - minX) * 1.5 + 400);
     let h = w / a;
-    const needH = (maxY - minY) * 1.4 + 600;
+    const needH = Math.max(MIN_FIT_SPAN_M, (maxY - minY) * 1.4 + 600);
     if (h < needH) {
       h = needH;
       w = h * a;
